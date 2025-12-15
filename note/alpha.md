@@ -1,5 +1,28 @@
 # trpc-go
 
+# 前言 与 AI RoadMap
+
+trpc-go 是一个基于 Go 语言的 **RPC 框架**，它的设计目标是提供一个高性能、高并发的 RPC 框架，同时也提供了一些常用的功能，如服务注册与发现、负载均衡、断路器、网关等。
+
+## RPC框架 与 Web框架
+
+如果你熟悉 Gin 或 SpringBoot，可能会惊讶于 trpc-go 对底层（如 Transport/Codec）的暴露程度。这是设计目标决定的：
+
+| 维度 | Web 框架 (Gin, SpringBoot) | RPC 框架 (trpc-go, gRPC) |
+| :--- | :--- | :--- |
+| **核心协议** | **HTTP** (强绑定) | **多协议** (TCP/UDP, tRPC/gRPC/HTTP) |
+| **底层控制** | 黑盒 (依赖 Tomcat/net/http) | **白盒** (自研 Transport/Framer) |
+| **目标** | 通用性、开发效率 | **极致性能**、海量并发、服务治理 |
+
+---
+
+- **web框架**: "给我一个 HTTP 请求，我帮你路由到 Controller。"
+- **rpc框架**: "不管你是 TCP 还是 UDP，不管你是 PB 还是 JSON，我都给你拆解好，送到你的 Service 方法里，顺便把超时、熔断、监控都给你做了。"
+
+--- 
+
+## AI RoadMap
+
 - ai copilot prompt
 ```text
 这是由腾讯开源的rpc框架的go语言版本trpc-go，<引用项目>，其README为<引用README中英文版本>，请你仔细阅读其说明文档和项目结构，并确保自己能掌握它。
@@ -94,14 +117,14 @@ func NewServer(opt ...server.Option) *server.Server
 5. **核心**:注册`server`和其下属的各个`service`(即配置文件中的`server.service`段)
 > 注意区分`server`和`service`的区别：
 > - `Server` (服务器) ：是 **进程级** 的概念。它是一个物理容器，代表这一个 Go 进程。
-> - `Service` (服务) ：是 **逻辑级** 的概念。它是一个网络监听实体（IP:Port），代表一组相关功能的集合。。
+> - `Service` (服务) ：是 **逻辑级** 的概念。它是一个网络监听实体（IP:Port），代表一组相关功能的集合。  
 > **关系：1 个 Server 包含 N 个 Service。**
 
 ---
 第五步所谓的“注册”，其实包含了两层含义：
 
-1. **对象注册 (Internal Registration)** ：`s.AddService` 把创建好的 `Service` 对象存到 `Server.services map` 中。这样当 `Server` 启动（`Serve`）时，它知道要启动哪些监听端口。
-2. **服务发现注册 (Naming Registration)** ：这在 `Service.Serve()` 时才会发生（延迟注册）。当服务启动监听成功后，它会调用 `s.opts.Registry.Register`，**向外部的注册中心（如北极星）汇报：“嘿，我启动好了，我的 IP 是 x.x.x.x”**。
+- **对象注册 (Internal Registration)** ：`s.AddService` 把创建好的 `Service` 对象存到 `Server.services map` 中。这样当 `Server` 启动（`Serve`）时，它知道要启动哪些监听端口。
+- **服务发现注册 (Naming Registration)** ：这在 `Service.Serve()` 时才会发生（延迟注册）。当服务启动监听成功后，它会调用 `s.opts.Registry.Register`，**向外部的注册中心（如北极星）汇报：“嘿，我启动好了，我的 IP 是 x.x.x.x”**。
 ---
 
 6. 注册第2步获得的关闭插件回调，当`server`关闭时先执行插件关闭的回调
@@ -670,5 +693,287 @@ func (s *service) handle(ctx context.Context, msg codec.Msg, reqBodyBuf []byte) 
 ---
 
 **至此，一个完整的请求-响应周期就结束了。**
+
+---
+
+# 专题：codec层-消息解析与序列化
+
+## 1. 核心概念辨析
+
+在 trpc-go 中，处理网络数据包涉及三个容易混淆的概念。理解它们的区别是掌握协议层的关键。
+
+| 概念 | 英文 | 对应接口 | 职责 | 输入/输出 |
+| :--- | :--- | :--- | :--- | :--- |
+| **序列化** | Serialization | `Serializer.Marshal` | **对象 <-> 字节**<br>负责业务数据的格式转换 (JSON/PB) | `struct` <-> `[]byte` (Body) |
+| **编解码** | Codec | `Codec.Encode` | **协议头+体 <-> 数据包**<br>负责通信协议的封包拆包 (trpc/http) | `Msg` + `Body` <-> `[]byte` (Packet) |
+| **消息上下文** | Msg | `codec.Msg` | **元数据载体**<br>在 Codec 和业务层之间传递协议头信息 | (Header Info) |
+
+**比喻：寄快递**
+-   **序列化**：把拼好的乐高玩具拆散成积木块（Body），装进袋子。
+-   **编解码**：把积木袋子装箱，填好快递单（Header: RequestID, Method），封箱。
+-   **Msg**：就是那张快递单，记录了物流信息，但不包含积木本身。
+
+## 2. Codec 接口定义
+
+位于 `codec/codec.go`：
+
+```go
+type Codec interface {
+    // 编码：将 Msg(头) 和 Body(体) 打包成二进制网络包
+    Encode(message Msg, body []byte) (buffer []byte, err error)
+    
+    // 解码：将二进制网络包拆解，解析出 Msg(头) 和纯净的 Body(体)
+    Decode(message Msg, buffer []byte) (body []byte, err error)
+}
+```
+
+## 3. 默认协议：tRPC
+
+框架默认使用 `trpc` 协议（二进制定长头协议）。
+
+-   **物理结构**：16 字节定长头 + PB Body。
+-   **头部字段**：
+    -   `Magic` (2B): 魔数，校验协议。
+    -   `TotalLen` (4B): 包总长度。
+    -   `RequestID` (4B): 请求 ID。
+    -   `StreamID`: 流 ID。
+-   **实现位置**：根目录 `codec.go` 中的 `framer` 和 `init()` 注册逻辑。
+
+## 4. 多协议支持机制 (Multiplexing & Plugins)
+
+trpc-go 通过插件化机制支持多种协议（如 HTTP, gRPC）。
+
+### A. 通用模式 (Binary Protocol)
+适用于 trpc, gRPC 等基于 TCP 流的协议。
+1.  **Framer**: 注册 `FramerBuilder`，负责解决 TCP 粘包（如读取 Length 字段）。
+2.  **Codec**: 注册 `Codec`，负责解析协议头。
+3.  **Transport**: 复用通用的 `serverTransport` (TCP/UDP)。
+
+### B. 适配器模式 (HTTP/HTTP2)
+HTTP 协议过于复杂，框架没有使用通用 Framer，而是直接复用了 Go 标准库。
+
+1.  **专用 Transport**: 注册 `http.ServerTransport`，内部启动 `net/http.Server`。
+2.  **适配器 (Adapter)**:
+    *   `transport` 层通过 `serveFunc` 将 `http.Request` 塞入 `Context`。
+    *   调用 `Service.Handle(ctx, nil)` (传入空 Body)。
+3.  **专用 Codec**:
+    *   `http.Codec` 从 `Context` 中取出 `http.Request`。
+    *   解析 Header，读取 Body，返回给 Service 层。
+
+这种设计使得 Service 层对底层协议无感，无论是 TCP 二进制流还是 HTTP 请求，最终都统一为 `Context + []byte` 的处理接口。
+
+---
+
+# Client 调用全流程
+> 完结了Service端相关的内容后，我们正式进入Client端的调用全流程。  
+
+Client调用流程涉及到**分布式系统的核心难题** ：
+- 去哪找服务（**服务发现: Discovery**）
+- 找哪个节点（**负载均衡: LoadBalance**）
+- 出错怎么办（**熔断机制: CircuitBreaker**）
+
+## 从PB得到Proxy
+我们仍然以 `/examples/helloworld` 为例，客户端的调用首先需要从 PB 得到 ClientProxy：
+```go
+func main() {
+    // 1. 从PB得到ClientProxy
+	c := pb.NewGreeterClientProxy(client.WithTarget("ip://127.0.0.1:8000"))
+    // 2. 调用Hello方法
+	rsp, err := c.Hello(context.Background(), &pb.HelloRequest{Msg: "world"})
+	if err != nil {
+		log.Error(err)
+	}
+	log.Info(rsp.Msg)
+}
+```
+我们深入到 `NewGreeterClientProxy` 方法，它是 PB 代码生成器自动创建的：
+```go
+func NewGreeterClientProxy(opts ...client.Option) GreeterClientProxy {
+	return &clientProxy{
+		client.NewProxy(append([]client.Option{client.WithServiceName("trpc.helloworld.Greeter")}, opts...)...),
+	}
+}
+```
+- **作用**：创建一个 `clientProxy` 实例，绑定服务名 `trpc.helloworld.Greeter`。
+- **参数**：`opts` 是用户自定义的选项，如 `client.WithTarget("ip://127.0.0.1:8000")`。
+
+---
+
+接下来就是调用 `Hello` 方法，其源码如下()：
+```go
+func (c *GreeterClientProxyImpl) Hello(ctx context.Context, req *HelloRequest, opts ...client.Option) (*HelloReply, error) {
+
+    // 这部分都是在进行配置，为后续的Invoke方法做准备
+	ctx, msg := codec.WithCloneMessage(ctx)
+	defer codec.PutBackMessage(msg)
+	msg.WithClientRPCName("/trpc.helloworld.Greeter/Hello")
+	msg.WithCalleeServiceName(GreeterServer_ServiceDesc.ServiceName)
+	msg.WithCalleeApp("")
+	msg.WithCalleeServer("")
+	msg.WithCalleeService("Greeter")
+	msg.WithCalleeMethod("Hello")
+	msg.WithSerializationType(codec.SerializationTypePB)
+	callopts := make([]client.Option, 0, len(c.opts)+len(opts))
+	callopts = append(callopts, c.opts...)
+	callopts = append(callopts, opts...)
+
+    // 核心: 调用Invoke方法
+	rsp := &HelloReply{}
+	if err := c.client.Invoke(ctx, req, rsp, callopts...); err != nil {
+		return nil, err
+	}
+
+	return rsp, nil
+}
+```
+- **作用**：调用 `Invoke` 方法，完成 RPC 调用。
+- **参数**：
+    - `ctx`：Go 标准库 Context，用于传递调用元数据（如超时、取消信号）。
+    - `req`：客户端请求结构体（如 `HelloRequest`）。
+    - `opts`：用户自定义选项，如 `client.WithTimeout(time.Second)`。
+
+---
+
+从调用`Invoke`开始，就重新进入了trpc-go框架中
+
+---
+
+
+## 核心方法：`client.Invoke`
+> /client/client.go  
+
+`Invoke` 方法是客户端调用的**心脏**，它协调了从配置加载到网络发送的全过程。可以拆解为五个关键阶段：
+
+### 1. 上下文准备 (Context Preparation)
+```go
+ctx, msg := codec.EnsureMessage(ctx)
+```
+- **作用**：确保 Context 里包含 `Msg` 对象。
+- **目的**：`Msg` 是框架内部传递元数据（如 RequestID、调用方 IP、被调方服务名）的载体。
+
+### 2. 链路追踪埋点 (Tracing)
+```go
+span, end, ctx := rpcz.NewSpanContext(ctx, "client")
+defer func() { span.SetAttribute(...); end.End() }()
+```
+- **作用**：启动一个 Client Span。
+- **目的**：记录调用耗时和结果，供监控系统（如 Jaeger/SkyWalking）展示。
+
+### 3. 配置加载 (Option Loading)
+```go
+opts, err := c.getOptions(msg, opt...)
+```
+- **作用**：计算本次调用所需的最终配置。
+- **逻辑**：
+    1. 根据 `msg.CalleeServiceName()` 去全局配置 (`trpc_go.yaml`) 查找。
+    2. 合并用户代码中传入的 `opt` (如 `client.WithTimeout`)，用户配置优先级最高。
+
+### 4. 元数据更新与超时控制
+```go
+c.updateMsg(msg, opts)
+if opts.Timeout > 0 {
+    ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+    defer cancel()
+}
+```
+- **作用**：
+    - 将配置中的元数据（如 `MetaData`）回填到 `Msg` 中。
+    - 设置 Go 标准库 Context 的超时时间，控制整个调用链的生命周期。
+
+### 5. 执行拦截器链 (Execution)
+```go
+filters := c.fixFilters(opts)
+return filters.Filter(ctx, reqBody, rspBody, callFunc)
+```
+- **作用**：启动“洋葱模型”调用链。
+- **关键点**：
+    - `fixFilters` 会自动将 **`selectorFilter`** (服务发现核心) 追加到链尾。
+    - `callFunc` 是最内核函数，负责序列化和网络发送。
+    - **执行顺序**：用户拦截器 -> Selector 拦截器 -> 网络发送。
+
+---
+
+## SelectorFilter: 服务发现的执行者
+
+`selectorFilter` 是 Client 端调用链中承上启下的关键节点，也是**服务发现的执行者**。
+
+### 1. 位置与作用
+- **位置**：位于拦截器链的**倒数第一层**，紧贴在网络发送 (`callFunc`) 之前。
+- **作用**：将逻辑服务名（如 `trpc.app.server.service`）转换为物理 IP 地址。
+
+### 2. 执行流程
+1.  **Select (寻址)**：调用 `opts.Selector.Select`，从注册中心获取一个健康的节点 (`Node`)。
+2.  **Inject (注入)**：将 `Node.Address` 注入到 `Msg` 中，供下一步网络传输使用。
+3.  **Next (调用)**：执行 `next()` 发起真正的网络请求。
+4.  **Report (上报)**：请求返回后，将耗时和错误上报给 Selector，用于熔断决策。
+
+### 3. 核心：TrpcSelector 的编排逻辑
+`Selector` 接口只是一个**编排者 (Orchestrator)**，它通过组合三个插件来完成工作：
+
+```go
+// TrpcSelector.Select 伪代码
+func Select(...) {
+    // 1. 发现：去注册中心拉取所有 IP
+    list := Discovery.List(serviceName)
+    
+    // 2. 路由：根据规则（如 Set/Tag）过滤 IP
+    list = ServiceRouter.Filter(list)
+    
+    // 3. 负载均衡：根据算法（如轮询/权重）选一个 IP
+    node = LoadBalancer.Select(list)
+    
+    return node
+}
+```
+
+- **Discovery**: 工人 A，负责找人（北极星/ETCD）。
+- **ServiceRouter**: 工人 B，负责筛选。
+- **LoadBalancer**: 工人 C，负责挑选。
+
+这种**分层插件化**设计，使得我们既可以替换整个流程（Selector），也可以只替换某个环节（如只换 Discovery 为北极星）。
+
+trpc提供了默认的实现，也可以选择自定义实现。
+
+---
+
+## 执行远程调用
+
+`callFunc` 是客户端调用链的终点，负责将准备好的数据发送到网络。
+
+### 1. 核心流程 (`callFunc`)
+```go
+func callFunc(ctx context.Context, reqBody interface{}, rspBody interface{}) (err error) {
+    // 1. 准备请求包
+    // prepareRequestBuf = 序列化(Marshal) + 压缩 + 编码协议头(Encode)
+    reqBuf, err := prepareRequestBuf(ctx, msg, reqBody, opts)
+    
+    // 2. 发起网络调用 (RoundTrip)
+    // 这是真正 IO 发生的地方。
+    // opts.Transport 通常是 transport.DefaultClientTransport
+    rspBuf, err := opts.Transport.RoundTrip(ctx, reqBuf, opts.CallOptions...)
+    
+    // 3. 解码协议头
+    // 剥离协议头，拿出纯净的 Body
+    rspBodyBuf, err := opts.Codec.Decode(msg, rspBuf)
+    
+    // 4. 处理响应 Body
+    // processResponseBuf = 解压 + 反序列化(Unmarshal)
+    return processResponseBuf(ctx, msg, rspBody, rspBodyBuf, opts)
+}
+```
+
+### 2. 连接管理 (`Transport.RoundTrip`)
+`ClientTransport` 的核心职责不是简单的 Dial，而是**连接池管理 (Pooling)**。
+
+- **获取连接**：`opts.Pool.Get(address)`。从连接池获取到目标 IP (由 Selector 选出) 的空闲连接。
+- **发送数据**：将 `reqBuf` 写入 TCP 连接。
+- **接收响应**：阻塞读取直到收到完整响应包。
+- **归还连接**：请求完成后，将连接放回池中 (Keep-Alive) 以供复用。
+
+**关键点**：`Client` 端通过 `Transport` 层屏蔽了连接复用、多路复用等复杂的网络细节，上层业务只需关注“请求”与“响应”。
+
+---
+
+至此，Client 端的整个调用流程（`Invoke -> Select -> Connect -> Send -> Recv`）就彻底打通了
 
 ---
