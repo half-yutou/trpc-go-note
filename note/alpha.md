@@ -764,6 +764,57 @@ HTTP 协议过于复杂，框架没有使用通用 Framer，而是直接复用�
 
 ---
 
+## 5. 自定义 JSON-Serializer
+
+### 1. 默认行为与 json-iterator
+`trpc-go` 框架在处理 JSON 序列化（如 HTTP Transport）时，默认使用 `json-iterator` 库，主要出于早期的性能考虑。
+- **默认实现**：`codec.JSONSerialization`
+- **底层依赖**：`github.com/json-iterator/go`
+
+### 2. 自定义 Serializer (替换为标准库)
+如果为了追求极致的稳定性（避免 json-iterator 潜在的 panic 风险）或兼容性，可以通过 `codec.RegisterSerializer` 替换为 Go 官方标准库 `encoding/json`。
+
+**代码示例**：
+```go
+import (
+    "encoding/json"
+    "trpc.group/trpc-go/trpc-go/codec"
+)
+
+// 1. 定义 Serializer
+type StdJSONSerializer struct{}
+
+func (s *StdJSONSerializer) Unmarshal(in []byte, body interface{}) error {
+    return json.Unmarshal(in, body)
+}
+
+func (s *StdJSONSerializer) Marshal(body interface{}) ([]byte, error) {
+    return json.Marshal(body)
+}
+
+func init() {
+    // 2. 注册并覆盖默认实现
+    codec.RegisterSerializer(codec.SerializationTypeJSON, &StdJSONSerializer{})
+}
+```
+
+### 3. 经典问题：Protobuf int64 转 JSON 变 String
+很多开发者会遇到：PB 定义的 `int64` 字段，在 HTTP 接口返回 JSON 时变成了字符串 `"12345"`，而不是数字 `12345`。
+
+**原因分析**：
+这是 `trpc-go` 对 `proto.Message` 类型的特殊处理逻辑决定的。
+
+| 场景 | 对象类型 | 使用的库 | 行为 (int64) |
+| :--- | :--- | :--- | :--- |
+| **PB 生成对象** | `proto.Message` | `jsonpb` (官方库) | **转为 String** (为了兼容 JS 精度) |
+| **普通 Struct/Map** | 非 `proto.Message` | `json-iterator` (默认) | **保持 Number** |
+
+**解决方案**：
+如果你必须返回 Number，可以通过上述“自定义 Serializer”的方式，强制使用标准库 `encoding/json`，从而绕过 `jsonpb` 的默认规则。
+
+--- 
+
+
 # Client 调用全流程
 > 完结了Service端相关的内容后，我们正式进入Client端的调用全流程。  
 
