@@ -23,8 +23,8 @@ server:
 
 	// 2. 加载配置
 	// 指定使用我们刚才注册的 "mock-remote" provider
-	cfg, err := config.Load("app.yaml", 
-		config.WithProvider("mock-remote"), 
+	cfg, err := config.Load("app.yaml",
+		config.WithProvider("mock-remote"),
 		config.WithCodec("yaml"),
 		config.WithWatch(),
 	)
@@ -43,7 +43,7 @@ server:
   timeout: %d
   msg: "version %d"
 `, 1000+version, version)
-			
+
 			// 模拟在远程控制台点击了“发布”
 			UpdateRemoteConfig("app.yaml", newValue)
 		}
@@ -53,7 +53,7 @@ server:
 	for {
 		timeout := cfg.GetInt("server.timeout", 0)
 		msg := cfg.GetString("server.msg", "")
-		
+
 		log.Infof("[Main] Current Config -> timeout: %d, msg: %s", timeout, msg)
 		time.Sleep(1 * time.Second)
 	}

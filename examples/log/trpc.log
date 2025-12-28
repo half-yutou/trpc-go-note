@@ -1,0 +1,10 @@
+{"L":"INFO","T":"2025-12-28 14:23:08.037","C":"log_demo/main.go:44","M":"Info log (console + file): 0"}
+{"L":"ERROR","T":"2025-12-28 14:23:08.037","C":"log_demo/main.go:47","M":"Error log with field","uid":123}
+{"L":"INFO","T":"2025-12-28 14:23:08.138","C":"log_demo/main.go:44","M":"Info log (console + file): 1"}
+{"L":"ERROR","T":"2025-12-28 14:23:08.138","C":"log_demo/main.go:47","M":"Error log with field","uid":123}
+{"L":"INFO","T":"2025-12-28 14:23:08.238","C":"log_demo/main.go:44","M":"Info log (console + file): 2"}
+{"L":"ERROR","T":"2025-12-28 14:23:08.238","C":"log_demo/main.go:47","M":"Error log with field","uid":123}
+{"L":"INFO","T":"2025-12-28 14:23:08.339","C":"log_demo/main.go:44","M":"Info log (console + file): 3"}
+{"L":"ERROR","T":"2025-12-28 14:23:08.339","C":"log_demo/main.go:47","M":"Error log with field","uid":123}
+{"L":"INFO","T":"2025-12-28 14:23:08.439","C":"log_demo/main.go:44","M":"Info log (console + file): 4"}
+{"L":"ERROR","T":"2025-12-28 14:23:08.439","C":"log_demo/main.go:47","M":"Error log with field","uid":123}

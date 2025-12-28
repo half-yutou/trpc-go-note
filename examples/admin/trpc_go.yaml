@@ -1,0 +1,6 @@
+server:
+  app: demo
+  server: admin_demo
+  admin:
+    ip: 127.0.0.1
+    port: 9028

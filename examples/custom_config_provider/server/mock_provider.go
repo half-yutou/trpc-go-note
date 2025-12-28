@@ -22,10 +22,10 @@ var MockRemoteServer = struct {
 func UpdateRemoteConfig(key, value string) {
 	MockRemoteServer.mu.Lock()
 	defer MockRemoteServer.mu.Unlock()
-	
+
 	MockRemoteServer.data[key] = value
 	fmt.Printf("[RemoteServer] Config updated: %s = %s\n", key, value)
-	
+
 	// 推送给所有连接的客户端
 	for _, ch := range MockRemoteServer.chans {
 		// 非阻塞推送，防止卡死
@@ -55,7 +55,7 @@ func (p *MockProvider) Name() string {
 func (p *MockProvider) Read(path string) ([]byte, error) {
 	MockRemoteServer.mu.RLock()
 	defer MockRemoteServer.mu.RUnlock()
-	
+
 	if val, ok := MockRemoteServer.data[path]; ok {
 		return []byte(val), nil
 	}
@@ -66,11 +66,11 @@ func (p *MockProvider) Read(path string) ([]byte, error) {
 func (p *MockProvider) Watch(cb config.ProviderCallback) {
 	// 1. 建立连接（这里用 channel 模拟长连接）
 	updateCh := make(chan map[string]string, 10)
-	
+
 	MockRemoteServer.mu.Lock()
 	MockRemoteServer.chans = append(MockRemoteServer.chans, updateCh)
 	MockRemoteServer.mu.Unlock()
-	
+
 	// 2. 启动协程监听
 	go func() {
 		for data := range updateCh {
