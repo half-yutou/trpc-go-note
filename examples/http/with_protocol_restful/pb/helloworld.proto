@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package trpc.helloworld;
+option go_package="trpc-go-note/examples/helloworld/pb";
+
+// 1. 引入注解支持
+import "google/api/annotations.proto";
+
+service Greeter {
+  rpc Hello (HelloRequest) returns (HelloReply) {
+    // 2. 添加 RESTful 映射
+    option (google.api.http) = {
+      // 定义 HTTP 方法和路径
+      post: "/v1/hello"
+      // "*" 表示将整个 JSON Body 映射到 HelloRequest 消息体
+      // 如果只想映射某个字段，可以写 body: "msg"
+      body: "*"
+    };
+  }
+}
+
+message HelloRequest {
+  string msg = 1;
+}
+
+message HelloReply {
+  string msg = 1;
+}

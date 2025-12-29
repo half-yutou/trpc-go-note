@@ -1,0 +1,14 @@
+global:
+  namespace: development
+  env_name: test
+
+server:
+  app: demo
+  server: http_demo
+  service:
+    - name: trpc.demo.http.MyService  # 服务名，需与代码中一致
+      ip: 127.0.0.1
+      port: 8080                      # 监听 8080 端口
+      network: tcp
+      protocol: http_no_protocol                # 关键：指定协议为 http
+      timeout: 1000                   # 超时时间 ms

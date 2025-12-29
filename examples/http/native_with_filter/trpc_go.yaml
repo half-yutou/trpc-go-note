@@ -1,0 +1,20 @@
+global:
+  namespace: development
+  env_name: test
+
+server:
+  app: demo
+  server: http_demo_filter
+  filter:                  # <--- 全局 Filter 配置
+    - demo_logger          # 先执行日志
+    - demo_auth            # 后执行鉴权
+  service:
+    - name: trpc.demo.http.MyService
+      ip: 127.0.0.1
+      port: 8080
+      network: tcp
+      protocol: http_no_protocol # 关键：原生 HTTP 模式
+      timeout: 1000
+      # 也可在 service 级别配置 filter
+      # filter:
+      #   - demo_logger

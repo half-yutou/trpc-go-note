@@ -1,0 +1,23 @@
+global:
+  namespace: development
+  env_name: test
+
+server:
+  app: demo
+  server: rpc_http_demo
+  service:
+    # Service 1: 标准 TRPC 协议 (供其他微服务调用)
+    - name: trpc.helloworld.GreeterRPC
+      ip: 127.0.0.1
+      port: 8000
+      network: tcp
+      protocol: trpc
+      timeout: 1000
+
+    # Service 2: HTTP 协议 (供前端或外部调用)
+    - name: trpc.helloworld.Greeter
+      ip: 127.0.0.1
+      port: 8080
+      network: tcp
+      protocol: http     # <--- 关键：启用 RPC-Style HTTP 模式 (自动 JSON 转换)
+      timeout: 1000
