@@ -1,7 +1,6 @@
-# 泛HTTP服务与流式服务
+# 泛HTTP服务
 
 - 泛HTTP服务：`http`模块
-- 流式服务：`stream`模块
 
 # HTTP 服务分类
 
@@ -94,7 +93,7 @@ server:
 
 ---
 
-# 泛HTTP RPC 服务(with_protocol)
+# 泛HTTP RPC 服务搭建(with_protocol)
 
 本节介绍上述第 2 类：**泛 HTTP RPC 服务** (Standard RPC over HTTP)。
 它的核心理念是 **"Write RPC, Serve HTTP"**：你只需要编写标准的 RPC 服务代码，框架会自动将 HTTP 请求映射为 RPC 调用，并处理 JSON 到 PB 结构体的序列化。
@@ -156,5 +155,22 @@ http://<host>:<port>/<Package>.<Service>/<Method>
 
 ---
 
-# 泛HTTP RPC Restful 服务(with_protocol_restful)
+# 泛HTTP RPC Restful 服务搭建(with_protocol_restful)
+> 绝大部分情况使用原生 HTTP 服务即可，无需开启 RESTful 模式。
+见官方文档
+
+---
+
+# 泛HTTP流式服务搭建
+
+在官方文档中，"流式发送/读取"与"Chunked 收发"被分别列出，这实际上是**业务目的**与**实现手段**的关系。
+
+### 核心概念区分
+
+| 概念 | 定义 | 关系 |
+| :--- | :--- | :--- |
+| **Streaming (流式传输)** | **业务目的**：指数据像水流一样传输，而非一次性发送。<br>适用场景：大文件上传下载、实时数据推送。 | 上层 API 设计 (如 `io.Reader`) |
+| **Chunked (分块编码)** | **实现手段**：HTTP/1.1 协议层面的机制 (`Transfer-Encoding: chunked`)。<br>特点：无需预知 Content-Length，发一块传一块。 | 底层协议细节 |
+
+> **一句话总结**：流式传输包含了 Chunked。如果你只是想传大文件，使用框架提供的 Stream API 即可，底层通常会自动处理为 Chunked；如果你需要精确控制数据推送节奏（如 SSE），则需要显式操作 Flush。
 
